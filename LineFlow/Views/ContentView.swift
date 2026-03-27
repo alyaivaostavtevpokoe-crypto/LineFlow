@@ -47,13 +47,21 @@ struct ContentView: View {
                 Image(uiImage: result)
                     .resizable()
                     .scaledToFit()
-                    .frame(height: 200)
+                    .frame(height: 250)
+
+                Button("Сохранить изображение") {
+                    viewModel.saveResultImage()
+                }
+                .padding()
+                .background(Color.green)
+                .foregroundColor(.white)
+                .cornerRadius(16)
             }
 
             Spacer()
         }
         .padding()
-        .fileImporter(
+        .fileImporter( //модификатор свифт, который показывает системный выбор файлов
             isPresented: $viewModel.isImporterPresented,
             allowedContentTypes: [.png],
             allowsMultipleSelection: false
@@ -71,4 +79,6 @@ struct ContentView: View {
         }
     }
 }
+
+
 
