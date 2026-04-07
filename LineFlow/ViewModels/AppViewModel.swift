@@ -38,9 +38,18 @@ final class AppViewModel: NSObject, ObservableObject {
             return
         }
 
-        let result = processor.fill(image: inputImage)
-        resultImage = result.image
-        statusText = "Обработка завершена"
+        statusText = "Обработка..."
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+
+            let result = self.processor.fill(image: inputImage)
+
+            DispatchQueue.main.async {
+                self.resultImage = result.image
+                self.statusText = "Обработка завершена"
+            }
+        }
     }
 
     func saveResultImage() {
