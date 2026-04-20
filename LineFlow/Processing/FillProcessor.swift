@@ -31,21 +31,6 @@ final class FillProcessor {
         return ImageBitmap(width: width, height: height, pixels: pixels)
     }
 
-    private func resizedForProcessing(_ image: UIImage, maxDimension: CGFloat = 1200) -> UIImage {
-        let size = image.size
-        let maxSide = max(size.width, size.height)
-
-        guard maxSide > maxDimension else { return image }
-
-        let scale = maxDimension / maxSide
-        let newSize = CGSize(width: size.width * scale, height: size.height * scale)
-
-        let renderer = UIGraphicsImageRenderer(size: newSize)
-        return renderer.image { _ in
-            image.draw(in: CGRect(origin: .zero, size: newSize))
-        }
-    }
-
     private func blackNeighborCount(
         in source: ImageBitmap,
         x: Int,
@@ -162,7 +147,6 @@ final class FillProcessor {
             }
         }
 
-        // Integral image для быстрого локального среднего
         var integral = [Double](repeating: 0.0, count: (width + 1) * (height + 1))
 
         func integralIndex(_ x: Int, _ y: Int) -> Int {
@@ -458,9 +442,7 @@ final class FillProcessor {
     }
 
     func makeBinaryImage(from image: UIImage) -> UIImage? {
-        let processingImage = resizedForProcessing(image)
-
-        guard let sourceBitmap = ImageBitmap(image: processingImage) else {
+        guard let sourceBitmap = ImageBitmap(image: image) else {
             return nil
         }
 
@@ -470,13 +452,11 @@ final class FillProcessor {
             offset: 0.05
         )
 
-        return binaryBitmap.toUIImage(scale: processingImage.scale)
+        return binaryBitmap.toUIImage(scale: image.scale)
     }
 
     func fill(image: UIImage) -> FillResult {
-        let processingImage = resizedForProcessing(image)
-
-        guard let sourceBitmap = ImageBitmap(image: processingImage) else {
+        guard let sourceBitmap = ImageBitmap(image: image) else {
             return FillResult(image: image, size: image.size)
         }
 
@@ -565,11 +545,13 @@ final class FillProcessor {
             }
         }
 
-        let resultImage = resultBitmap.toUIImage(scale: processingImage.scale) ?? processingImage
+        guard let resultImage = resultBitmap.toUIImage(scale: image.scale) else {
+            return FillResult(image: image, size: image.size)
+        }
 
         return FillResult(
             image: resultImage,
-            size: CGSize(width: width, height: height)
+            size: image.size
         )
     }
 }

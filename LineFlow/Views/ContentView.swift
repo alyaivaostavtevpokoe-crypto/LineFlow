@@ -13,7 +13,6 @@ struct ContentView: View {
             Button("Вставьте изображение") {
                 viewModel.openImporter()
             }
-            
             .padding()
             .background(Color.orange)
             .foregroundColor(.blue)
@@ -29,15 +28,13 @@ struct ContentView: View {
             Button("Залить контур") {
                 viewModel.processImage()
             }
-            
             .padding()
             .background(Color.orange)
             .foregroundColor(.blue)
             .cornerRadius(16)
-            
+
             Button("Подбери цвет по алгоритму") {
             }
-            
             .padding()
             .background(Color.pink)
             .foregroundColor(.blue)
@@ -49,8 +46,8 @@ struct ContentView: View {
                     .scaledToFit()
                     .frame(height: 250)
 
-                Button("Сохранить изображение") {
-                    viewModel.saveResultImage()
+                Button("Скачать PNG") {
+                    viewModel.prepareExport()
                 }
                 .padding()
                 .background(Color.green)
@@ -61,7 +58,7 @@ struct ContentView: View {
             Spacer()
         }
         .padding()
-        .fileImporter( //модификатор свифт, который показывает системный выбор файлов
+        .fileImporter(
             isPresented: $viewModel.isImporterPresented,
             allowedContentTypes: [.png],
             allowsMultipleSelection: false
@@ -77,8 +74,13 @@ struct ContentView: View {
                 viewModel.handleImportedFile(.failure(error))
             }
         }
+        .fileExporter(
+            isPresented: $viewModel.isExporterPresented,
+            document: viewModel.exportDocument,
+            contentType: .png,
+            defaultFilename: "filled_layer"
+        ) { result in
+            viewModel.exportCompleted(result)
+        }
     }
 }
-
-
-

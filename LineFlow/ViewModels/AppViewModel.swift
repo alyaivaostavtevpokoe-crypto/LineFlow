@@ -7,6 +7,9 @@ final class AppViewModel: NSObject, ObservableObject {
     @Published var isImporterPresented: Bool = false
     @Published var statusText: String = "Выберите PNG"
 
+    @Published var isExporterPresented: Bool = false
+    @Published var exportDocument: PNGDocument?
+
     private let importService = ImageImportService()
     private let processor = FillProcessor()
 
@@ -52,30 +55,28 @@ final class AppViewModel: NSObject, ObservableObject {
         }
     }
 
-    func saveResultImage() {
+    func prepareExport() {
         guard let resultImage else {
             statusText = "Сначала обработайте изображение"
             return
         }
 
-        UIImageWriteToSavedPhotosAlbum(
-            resultImage,
-            self,
-            #selector(saveCompleted(_:didFinishSavingWithError:contextInfo:)),
-            nil
-        )
+        guard let pngData = resultImage.pngData() else {
+            statusText = "Не удалось подготовить PNG"
+            return
+        }
+
+        exportDocument = PNGDocument(data: pngData)
+        isExporterPresented = true
     }
 
-    @objc private func saveCompleted(
-        _ image: UIImage,
-        didFinishSavingWithError error: Error?,
-        contextInfo: UnsafeMutableRawPointer?
-    ) {
-        if let error = error {
-            statusText = "Не удалось сохранить изображение"
-            print("Ошибка сохранения: \(error)")
-        } else {
-            statusText = "Изображение сохранено в Фото"
+    func exportCompleted(_ result: Result<URL, Error>) {
+        switch result {
+        case .success:
+            statusText = "PNG сохранен"
+        case .failure(let error):
+            statusText = "Не удалось сохранить PNG"
+            print("Ошибка экспорта: \(error)")
         }
     }
 }
