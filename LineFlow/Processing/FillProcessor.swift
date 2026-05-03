@@ -31,6 +31,212 @@ final class FillProcessor {
         return ImageBitmap(width: width, height: height, pixels: pixels)
     }
 
+    private func strokePixel(for tool: SkeletonEditingTool) -> Pixel {
+        switch tool {
+        case .draw:
+            return Pixel(r: 0, g: 0, b: 0, a: 255)
+        case .erase:
+            return Pixel(r: 255, g: 255, b: 255, a: 255)
+        }
+    }
+
+    private func stampBrush(
+        on bitmap: inout ImageBitmap,
+        centerX: Int,
+        centerY: Int,
+        radius: Int,
+        pixel: Pixel
+    ) {
+        guard bitmap.width > 0, bitmap.height > 0 else { return }
+
+        guard radius > 0 else {
+            if centerX >= 0, centerX < bitmap.width, centerY >= 0, centerY < bitmap.height {
+                bitmap.setPixel(pixel, x: centerX, y: centerY)
+            }
+            return
+        }
+
+        let minX = max(0, centerX - radius)
+        let maxX = min(bitmap.width - 1, centerX + radius)
+        let minY = max(0, centerY - radius)
+        let maxY = min(bitmap.height - 1, centerY + radius)
+
+        guard minX <= maxX, minY <= maxY else { return }
+
+        let radiusSquared = radius * radius
+
+        for y in minY...maxY {
+            for x in minX...maxX {
+                let dx = x - centerX
+                let dy = y - centerY
+
+                if dx * dx + dy * dy <= radiusSquared {
+                    bitmap.setPixel(pixel, x: x, y: y)
+                }
+            }
+        }
+    
+    }
+
+    private func drawBrushLine(
+        on bitmap: inout ImageBitmap,
+        from start: CGPoint,
+        to end: CGPoint,
+        radius: Int,
+        pixel: Pixel
+    ) {
+        let x0Start = Int(start.x.rounded())
+        let y0Start = Int(start.y.rounded())
+        let x1 = Int(end.x.rounded())
+        let y1 = Int(end.y.rounded())
+
+        var x0 = x0Start
+        var y0 = y0Start
+
+        let dx = abs(x1 - x0)
+        let dy = abs(y1 - y0)
+
+        let sx = x0 < x1 ? 1 : -1
+        let sy = y0 < y1 ? 1 : -1
+
+        var err = dx - dy
+
+        while true {
+            stampBrush(
+                on: &bitmap,
+                centerX: x0,
+                centerY: y0,
+                radius: radius,
+                pixel: pixel
+            )
+
+            if x0 == x1 && y0 == y1 {
+                break
+            }
+
+            let e2 = 2 * err
+
+            if e2 > -dy {
+                err -= dy
+                x0 += sx
+            }
+
+            if e2 < dx {
+                err += dx
+                y0 += sy
+            }
+        }
+    }
+
+    func applySkeletonEdits(
+        to image: UIImage,
+        strokes: [SkeletonStroke]
+    ) -> UIImage? {
+        guard !strokes.isEmpty else { return image }
+        guard var bitmap = ImageBitmap(image: image) else { return nil }
+
+        for stroke in strokes {
+            let pixel = strokePixel(for: stroke.tool)
+            let radius = max(1, Int((stroke.brushSize / 2).rounded()))
+
+            if stroke.points.count == 1, let onlyPoint = stroke.points.first {
+                stampBrush(
+                    on: &bitmap,
+                    centerX: Int(onlyPoint.x.rounded()),
+                    centerY: Int(onlyPoint.y.rounded()),
+                    radius: radius,
+                    pixel: pixel
+                )
+                continue
+            }
+
+            for index in 1..<stroke.points.count {
+                let start = stroke.points[index - 1]
+                let end = stroke.points[index]
+
+                drawBrushLine(
+                    on: &bitmap,
+                    from: start,
+                    to: end,
+                    radius: radius,
+                    pixel: pixel
+                )
+            }
+        }
+
+        return bitmap.toUIImage(scale: image.scale)
+    }
+
+    func removeFilledRegion(
+        from image: UIImage,
+        at imagePoint: CGPoint
+    ) -> UIImage? {
+        guard var bitmap = ImageBitmap(image: image) else { return nil }
+
+        let x = Int(imagePoint.x.rounded())
+        let y = Int(imagePoint.y.rounded())
+
+        guard x >= 0, x < bitmap.width, y >= 0, y < bitmap.height else {
+            return image
+        }
+
+        let startPixel = bitmap.pixelAt(x: x, y: y)
+
+        // Удаляем только непрозрачную заливку, а не прозрачный фон
+        guard startPixel.a > 0 else {
+            return image
+        }
+
+        let target = startPixel
+        let transparent = Pixel(r: 0, g: 0, b: 0, a: 0)
+
+        var visited = [Bool](repeating: false, count: bitmap.width * bitmap.height)
+        var queue: [(Int, Int)] = [(x, y)]
+        var head = 0
+
+        func matches(_ pixel: Pixel, _ target: Pixel) -> Bool {
+            pixel.r == target.r &&
+            pixel.g == target.g &&
+            pixel.b == target.b &&
+            pixel.a == target.a
+        }
+
+        let directions = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+
+        while head < queue.count {
+            let (cx, cy) = queue[head]
+            head += 1
+
+            let idx = cy * bitmap.width + cx
+            if visited[idx] { continue }
+            visited[idx] = true
+
+            let pixel = bitmap.pixelAt(x: cx, y: cy)
+            if !matches(pixel, target) { continue }
+
+            bitmap.setPixel(transparent, x: cx, y: cy)
+
+            for (dx, dy) in directions {
+                let nx = cx + dx
+                let ny = cy + dy
+
+                guard nx >= 0, nx < bitmap.width, ny >= 0, ny < bitmap.height else {
+                    continue
+                }
+
+                let nIdx = ny * bitmap.width + nx
+                if visited[nIdx] { continue }
+
+                let neighbor = bitmap.pixelAt(x: nx, y: ny)
+                if matches(neighbor, target) {
+                    queue.append((nx, ny))
+                }
+            }
+        }
+
+        return bitmap.toUIImage(scale: image.scale)
+    }
+
     private func blackNeighborCount(
         in source: ImageBitmap,
         x: Int,
@@ -455,7 +661,115 @@ final class FillProcessor {
         return binaryBitmap.toUIImage(scale: image.scale)
     }
 
-    func fill(image: UIImage) -> FillResult {
+    func makeSkeletonPreview(from image: UIImage) -> UIImage? {
+        guard let sourceBitmap = ImageBitmap(image: image) else {
+            return nil
+        }
+
+        let binaryBitmap = adaptiveThresholdBitmap(
+            from: sourceBitmap,
+            windowRadius: 3,
+            offset: 0.05
+        )
+
+        let cleanedBitmap = removeShortConnectedComponents(
+            from: binaryBitmap,
+            minLength: 10
+        )
+
+        let skeletonBitmap = skeletonizeGuoHall(from: cleanedBitmap)
+
+        return skeletonBitmap.toUIImage(scale: image.scale)
+    }
+
+    func fill(fromSkeletonImage skeletonImage: UIImage, gapDistance: Double = 12.0) -> FillResult {
+        guard let sourceBitmap = ImageBitmap(image: skeletonImage) else {
+            return FillResult(image: skeletonImage, size: skeletonImage.size)
+        }
+
+        let closedBitmap = closeContourGaps(
+            in: sourceBitmap,
+            maxDistance: gapDistance
+        )
+
+        let width = closedBitmap.width
+        let height = closedBitmap.height
+        let total = width * height
+
+        var isBoundary = [Bool](repeating: false, count: total)
+        var outside = [Bool](repeating: false, count: total)
+
+        for y in 0..<height {
+            for x in 0..<width {
+                let pixel = closedBitmap.pixelAt(x: x, y: y)
+                let idx = y * width + x
+                isBoundary[idx] = isBlack(pixel)
+            }
+        }
+
+        var queue: [(Int, Int)] = []
+
+        func enqueueIfNeeded(x: Int, y: Int) {
+            guard x >= 0, x < width, y >= 0, y < height else { return }
+
+            let idx = y * width + x
+            if outside[idx] || isBoundary[idx] { return }
+
+            outside[idx] = true
+            queue.append((x, y))
+        }
+
+        for x in 0..<width {
+            enqueueIfNeeded(x: x, y: 0)
+            enqueueIfNeeded(x: x, y: height - 1)
+        }
+
+        for y in 0..<height {
+            enqueueIfNeeded(x: 0, y: y)
+            enqueueIfNeeded(x: width - 1, y: y)
+        }
+
+        let directions = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+        var head = 0
+
+        while head < queue.count {
+            let (x, y) = queue[head]
+            head += 1
+
+            for (dx, dy) in directions {
+                enqueueIfNeeded(x: x + dx, y: y + dy)
+            }
+        }
+
+        var resultBitmap = ImageBitmap(
+            width: width,
+            height: height,
+            pixels: [Pixel](repeating: Pixel(r: 0, g: 0, b: 0, a: 0), count: total)
+        )
+
+        let fillPixel = Pixel(r: 255, g: 0, b: 0, a: 255)
+
+        for y in 0..<height {
+            for x in 0..<width {
+                let idx = y * width + x
+
+                if !isBoundary[idx] && !outside[idx] {
+                    resultBitmap.setPixel(fillPixel, x: x, y: y)
+                }
+            }
+        }
+
+        guard let resultImage = resultBitmap.toUIImage(scale: skeletonImage.scale) else {
+            return FillResult(image: skeletonImage, size: skeletonImage.size)
+        }
+
+        return FillResult(
+            image: resultImage,
+            size: skeletonImage.size
+        )
+    }
+
+    func fill(image: UIImage, gapDistance: Double = 12.0) -> FillResult {
         guard let sourceBitmap = ImageBitmap(image: image) else {
             return FillResult(image: image, size: image.size)
         }
@@ -475,7 +789,7 @@ final class FillProcessor {
 
         let closedBitmap = closeContourGaps(
             in: skeletonBitmap,
-            maxDistance: 12.0
+            maxDistance: gapDistance
         )
 
         let width = closedBitmap.width
