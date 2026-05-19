@@ -28,8 +28,10 @@ struct EditableImageView: View {
                 checkerboardBackground
 
                 if let image {
+                    let actualImageSize = pixelSize(of: image)
+
                     let imageRect = fittedImageRect(
-                        imageSize: image.size,
+                        imageSize: actualImageSize,
                         containerSize: containerSize
                     )
 
@@ -39,7 +41,7 @@ struct EditableImageView: View {
                             .frame(width: imageRect.width, height: imageRect.height)
 
                         strokesLayer(
-                            imageSize: image.size,
+                            imageSize: actualImageSize,
                             displaySize: imageRect.size
                         )
                         .frame(width: imageRect.width, height: imageRect.height)
@@ -71,15 +73,17 @@ struct EditableImageView: View {
                 guard isEditingEnabled, let image else { return }
                 guard onTapInImage == nil else { return }
 
+                let actualImageSize = pixelSize(of: image)
+
                 let imageRect = fittedImageRect(
-                    imageSize: image.size,
+                    imageSize: actualImageSize,
                     containerSize: containerSize
                 )
 
                 guard let point = mapViewPointToImagePoint(
                     value.location,
                     imageRect: imageRect,
-                    imageSize: image.size
+                    imageSize: actualImageSize
                 ) else { return }
 
                 currentStrokePoints.append(point)
@@ -90,8 +94,10 @@ struct EditableImageView: View {
                     return
                 }
 
+                let actualImageSize = pixelSize(of: image)
+
                 let imageRect = fittedImageRect(
-                    imageSize: image.size,
+                    imageSize: actualImageSize,
                     containerSize: containerSize
                 )
 
@@ -100,7 +106,7 @@ struct EditableImageView: View {
                     guard let point = mapViewPointToImagePoint(
                         value.location,
                         imageRect: imageRect,
-                        imageSize: image.size
+                        imageSize: actualImageSize
                     ) else { return }
 
                     onTapInImage(point)
@@ -165,8 +171,8 @@ struct EditableImageView: View {
                         imageSize: imageSize,
                         displaySize: displaySize
                     ),
-                    lineCap: .round,
-                    lineJoin: .round
+                    lineCap: .butt,
+                    lineJoin: .miter
                 )
             )
         }
@@ -219,6 +225,20 @@ struct EditableImageView: View {
         )
 
         return CGRect(origin: origin, size: drawSize)
+    }
+
+    private func pixelSize(of image: UIImage) -> CGSize {
+        if let cgImage = image.cgImage {
+            return CGSize(
+                width: cgImage.width,
+                height: cgImage.height
+            )
+        }
+
+        return CGSize(
+            width: image.size.width * image.scale,
+            height: image.size.height * image.scale
+        )
     }
 
     // MARK: - Координаты
@@ -275,8 +295,9 @@ struct EditableImageView: View {
             if let last {
                 let dx = p.x - last.x
                 let dy = p.y - last.y
-                if dx*dx + dy*dy < 0.5 { continue }
+                if dx * dx + dy * dy < 0.5 { continue }
             }
+
             result.append(p)
             last = p
         }
@@ -290,7 +311,11 @@ struct EditableImageView: View {
         displaySize: CGSize
     ) -> CGFloat {
         guard imageSize.width > 0 else { return brushSize }
+
         let scale = displaySize.width / imageSize.width
+
+        // brushSize теперь считается в пикселях исходной картинки.
+        // На экране она масштабируется только для предпросмотра.
         return max(1, brushSize * scale)
     }
 

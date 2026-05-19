@@ -13,12 +13,14 @@ final class AppViewModel: ObservableObject {
     @Published var step: ProcessingStep = .input
     @Published var isEditingEnabled: Bool = false
 
+    // Значение шкалы теперь трактуется строго как пиксели изображения.
     @Published var gapDistance: Double = 12.0
 
     @Published var isShareSheetPresented: Bool = false
     @Published var exportURL: URL?
 
-    // Этап 3 — редактирование скелета
+    // Этап 3 — редактирование скелета.
+    // Значение шкалы теперь трактуется строго как пиксели изображения.
     @Published var skeletonEditingTool: SkeletonEditingTool = .erase
     @Published var skeletonBrushSize: Double = 12.0
     @Published var skeletonStrokes: [SkeletonStroke] = []
@@ -176,13 +178,16 @@ final class AppViewModel: ObservableObject {
         statusText = "Строю заливку..."
         isEditingEnabled = false
 
-        let currentGap = gapDistance
+        // ВАЖНО:
+        // gapDistance теперь передаётся как целое количество пикселей изображения.
+        // 12 на шкале = максимум 12 пикселей в bitmap.
+        let currentGap = max(0, gapDistance.rounded())
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
 
             let result = self.processor.fill(
-                fromSkeletonImage: skeletonImage,
+                from: skeletonImage,
                 gapDistance: currentGap
             )
 
